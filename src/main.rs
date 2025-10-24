@@ -18,10 +18,9 @@ async fn main() -> anyhow::Result<()>{
         .fallback(fallback_handler);
 
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080").await?;
-    info!("Server is started on http://0.0.0.0:8080");
+    info!("Server is started on http://{:?}", listener.local_addr()?);
 
-    axum::serve(listener, app)
-        .await?;
+    axum::serve(listener, app).await?;
 
     Ok(())
 }
