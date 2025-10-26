@@ -99,9 +99,9 @@ src/
 ├── state.rs             # Shared in-memory state (online users)
 ├── ws.rs                # Just forwarding ws submodules
 ├── http.rs              # Just forwarding http submodules
-└── ws/                  # WebSocket session logic
-    ├── session.rs       # Per-connection state & message handling
-    └── handler.rs       # WebSocket upgrade handler
+├── ws/                  # WebSocket session logic
+│   ├── session.rs       # Per-connection state & message handling
+│   └── handler.rs       # WebSocket upgrade handler
 └── http/                # HTTP handlers (upload, fallback)
     ├── upload.rs
     └── fallback.rs
@@ -111,7 +111,7 @@ src/
 
 ## 🗺️ Roadmap
 
-| Feature                     | Status       |
+| Feature                    | Status       |
 |----------------------------|--------------|
 | Text messaging             | ✅ Done      |
 | File uploads               | ✅ Done      |
