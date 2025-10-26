@@ -154,7 +154,3 @@ MIT — see [LICENSE](LICENSE) for details.
 
 > 💡 **Contributions, suggestions, and security feedback are welcome!**  
 > This project is designed to be **minimal, auditable, and privacy-respecting** from the ground up.
-
---- 
-
-Let me know if you'd like a version with badges (build, license), Docker/Podman instructions, or deployment tips for Alpine Linux!
