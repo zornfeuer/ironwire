@@ -21,7 +21,10 @@ impl From<AppMessage> for WsMessage {
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "type", content = "payload")]
 pub enum ClientMessage {
+    #[serde(rename = "auth")]
     Auth { token: String },
-    // TODO: Text { to: String, from: String, text: String },
+
+    #[serde(rename = "text")]
+    Text { to: String, text: String },
     // TODO: File { to: String, from: String, url: String, mime: String },
 }

@@ -31,13 +31,26 @@ impl Session {
     }
 
     async fn handle_incoming_text(&mut self, state: &SharedState, text: &str) -> bool {
-        match self.user_id {
-            None => self.handle_auth_only(state, text).await,
-            Some(_) => true, // TODO: self.handle.authorized_message(state, text).await,
+        if self.user_id.is_none() {
+            return self.handle_auth_message(state, text).await;
+        }
+
+        match serde_json::from_str::<ClientMessage>(text) {
+            Ok(ClientMessage::Text { to, text: msg_text }) => {
+                self.handle_text_message(state, &to, &msg_text).await
+            },
+            Ok(ClientMessage::Auth { .. }) => {
+                warn!("User already authenticated");
+                true
+            },
+            Err(e) => {
+                warn!("Failed to parse message: {}", e);
+                true
+            },
         }
     }
 
-    async fn handle_auth_only(&mut self, state: &SharedState, text: &str) -> bool {
+    async fn handle_auth_message(&mut self, state: &SharedState, text: &str) -> bool {
         match serde_json::from_str::<ClientMessage>(text) {
             Ok(ClientMessage::Auth { token }) => {
                 if token.is_empty() {
@@ -70,6 +83,38 @@ impl Session {
                     .await;
                 true
             }
+        }
+    }
+
+    async fn handle_text_message(&mut self, state: &SharedState, to: &str, text: &str ) -> bool {
+        let from = self.user_id.as_ref().unwrap(); // is called only after authorization so user_id
+                                                   // shouldn't be None
+        if let Some(sender) = state.get(to) {
+            let msg = serde_json::json!({
+                "type": "text",
+                "payload": {
+                    "from": from,
+                    "text": text,
+                }
+            });
+
+            if sender.send(AppMessage::Text(msg.to_string())).is_err() {
+                warn!("Failed to send message to user {}", to);
+            }
+            true
+        } else {
+            let err = serde_json::json!({
+                "type": "error",
+                "payload": {
+                    "msg": "user_offline",
+                    "user": to
+                }
+            });
+            let _ = self
+                .socket
+                .send(Message::Text(Utf8Bytes::from(err.to_string())))
+                .await;
+            true
         }
     }
 
