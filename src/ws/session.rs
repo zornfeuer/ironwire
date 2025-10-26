@@ -31,6 +31,13 @@ impl Session {
     }
 
     async fn handle_incoming_text(&mut self, state: &SharedState, text: &str) -> bool {
+        match self.user_id {
+            None => self.handle_auth_only(state, text).await,
+            Some(_) => true, // TODO: self.handle.authorized_message(state, text).await,
+        }
+    }
+
+    async fn handle_auth_only(&mut self, state: &SharedState, text: &str) -> bool {
         match serde_json::from_str::<ClientMessage>(text) {
             Ok(ClientMessage::Auth { token }) => {
                 if token.is_empty() {
@@ -56,7 +63,11 @@ impl Session {
                 true
             },
             _ => {
-                warn!("Received non-auth message before authentication");
+                let err = serde_json::json!({ "type": "error", "payload": { "msg": "auth_required" } });
+                let _ = self
+                    .socket
+                    .send(Message::Text(Utf8Bytes::from(err.to_string())))
+                    .await;
                 true
             }
         }
