@@ -9,7 +9,6 @@ use tokio::net::TcpListener;
 use tracing::info;
 use tower_http::services::ServeDir;
 
-
 #[tokio::main]
 async fn main() -> anyhow::Result<()>{
     tracing_subscriber::fmt::init();

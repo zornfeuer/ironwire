@@ -15,5 +15,4 @@ pub async fn ws_handler(
 pub async fn handle_socket(socket: WebSocket, state: SharedState) {
     let (session, rx) = Session::new(socket).await;
     session.run(state, rx).await;
-
 }
