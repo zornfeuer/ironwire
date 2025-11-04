@@ -4,6 +4,7 @@ use axum::extract::ws::Message as WsMessage;
 #[derive(Debug, Clone)]
 pub enum AppMessage {
     Text(String),
+    Binary(Vec<u8>),
     Close,
 }
 
@@ -11,6 +12,7 @@ impl From<AppMessage> for WsMessage {
     fn from(app_msg: AppMessage) -> Self {
         match app_msg {
             AppMessage::Text(s) => WsMessage::Text(s.into()),
+            AppMessage::Binary(b) => WsMessage::Binary(b.into()),
             AppMessage::Close => WsMessage::Close(None),
         }
     }
@@ -20,9 +22,12 @@ impl From<AppMessage> for WsMessage {
 #[serde(tag = "type", content = "payload")]
 pub enum ClientMessage {
     #[serde(rename = "auth")]
-    Auth { token: String },
+    Auth { token: Vec<u8> },
+
+    #[serde(rename = "verify")]
+    Verify { attempt: Vec<u8> },
 
     #[serde(rename = "text")]
     Text { to: String, text: String },
-    File { to: String, url: String },
+    // TODO: File { to: String, from: String, url: String, mime: String },
 }
