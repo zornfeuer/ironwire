@@ -4,6 +4,8 @@ use hex;
 use serde_json::json;
 use axum::extract::ws::{Message, Utf8Bytes};
 
+const CHALLENGE_SIZE: usize = 32;
+
 pub struct AuthChallenge {
     pub challenge: [u8; 32],
     pub public_key: VerifyingKey,
@@ -37,7 +39,7 @@ impl AuthChallenge {
         let public_key = VerifyingKey::from_bytes(public_key_bytes.try_into().unwrap())
             .map_err(|_| AuthError::InvalidPublicKey)?;
 
-        let mut challenge = [0u8; 32];
+        let mut challenge = [0u8; CHALLENGE_SIZE];
         OsRng.fill_bytes(&mut challenge);
 
         let auth_challenge = AuthChallenge {

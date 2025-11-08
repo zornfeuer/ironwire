@@ -1,7 +1,7 @@
 use crate::{
     messages::{AppMessage, ClientMessage},
     state::{SharedState, UserId, MessageSender},
-    ws::auth::{AuthChallenge, AuthError},
+    ws::auth::AuthChallenge,
 };
 use axum::extract::ws::{
     CloseFrame,
@@ -12,6 +12,8 @@ use axum::extract::ws::{
 };
 use tracing::{info, warn};
 use tokio::time::Duration;
+
+const AUTH_TIMEOUT: u64 = 10;
 
 enum HandleResult {
     Continue,
@@ -44,7 +46,7 @@ impl Session {
         state: SharedState,
         mut rx: tokio::sync::mpsc::UnboundedReceiver<AppMessage>
     ) {
-        let auth_timeout = Duration::from_secs(10);
+        let auth_timeout = Duration::from_secs(AUTH_TIMEOUT);
         let mut auth_timer = Some(Box::pin(tokio::time::sleep(auth_timeout)));
 
         loop {
