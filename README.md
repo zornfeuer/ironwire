@@ -2,22 +2,25 @@
 
 A minimal, secure, and extensible real-time messaging server written in **Rust**, designed as the foundation for a full-featured messenger with voice/video messages, file sharing, and WebRTC calls.
 
-Built with performance, correctness, and modularity in mind — leveraging `axum`, `tokio`, and modern async Rust.
+Built with performance, correctness, and **end-to-end ready security** — leveraging `axum`, `tokio`, `ed25519-dalek`, and modern async Rust.
 
-> **Status**: ✅ MVP core complete — authentication, text messaging, and file uploads working.
+> **Status**: ✅ Core protocol secure — challenge-response auth, client IDs derived from public keys, memory-safe concurrency.
 
 ---
 
 ## ✨ Features (Current)
 
 - **WebSocket-based real-time communication**
-- **Authentication** via token (JWT-ready)
+- **Cryptographic authentication** via Ed25519 challenge-response (no secrets over wire)
+- **Client IDs = hex(public key)** — stable, non-reassignable, E2E-ready
 - **Peer-to-peer text messaging** (online users only)
-- **File upload endpoint** (`POST /upload`) with unique URLs
-- **Modular architecture** (easy to extend)
-- **No external database required** for MVP (state kept in memory)
+- **File upload endpoint** (`POST /upload`) with safe serving (`Content-Disposition: attachment`)
+- **DoS-resistant design**:
+  - 10s auth timeout
+  - Path traversal protection
+- **Modular & zero-DB architecture** (in-memory state, `DashMap`)
 
-> Video/audio "circle" messages and WebRTC calls are **not yet implemented** (planned).
+> Audio/video, WebRTC, message history, and E2E encryption are **planned** (client-side first).
 
 ---
 
@@ -25,7 +28,7 @@ Built with performance, correctness, and modularity in mind — leveraging `axum
 
 ### Prerequisites
 
-- Rust (1.70+)
+- Rust ≥1.70
 - `cargo`
 - (Optional) [`websocat`](https://github.com/vi/websocat) for CLI testing
 
@@ -37,56 +40,68 @@ cd ironwire
 cargo run
 ```
 
-The server will start on `http://0.0.0.0:8080`.
+Server starts on `http://0.0.0.0:8080`.
 
-### Test Authentication & Messaging
+---
 
-1. Open two terminals.
-2. In each, connect via WebSocket:
+### 🔐 Test Ed25519 Authentication (via `websocat`)
 
+> **Note**: You need a tool to generate Ed25519 keypair and sign. For demo, use [this script](#appendix-generate-test-keypair) or `client-cli` (coming soon).
+
+#### 1. Generate test keypair (see Appendix)
+```bash
+# pubkey: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+# privkey: fedcba9876543210fedcba9876543210fedcba9876543210fedcba9876543210
+```
+
+#### 2. Connect & send public key:
 ```bash
 websocat ws://localhost:8080/ws
 ```
-
-3. In both, authenticate (use different tokens):
-
 ```json
-{"type":"auth","payload":{"token":"alice"}}
-{"type":"auth","payload":{"token":"bob"}}
+{"type":"auth","payload":{"token":"0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}
 ```
 
-You should receive:
+→ Server replies with challenge:
+```json
+{"type":"auth_challenge","challenge":"a1b2c3d4..."}
+```
 
+#### 3. Sign challenge hex-decoded with private key → send signature (hex):
+```json
+{"type":"verify","payload":{"attempt":"e3f1a9b8..."}}
+```
+
+→ On success:
 ```json
 {"type":"auth_ok"}
 ```
 
-4. From `alice`, send a message to `bob`:
+Client ID becomes: `0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef`
 
+#### 4. Send message:
 ```json
-{"type":"text","payload":{"to":"bob","text":"Hello from Alice!"}}
+{"type":"text","payload":{"to":"other_client_id","text":"Hello, E2E-ready world!"}}
 ```
 
-5. `bob` will receive:
-
+Recipient gets:
 ```json
-{"type":"text","payload":{"from":"alice","text":"Hello from Alice!"}}
+{"type":"text","payload":{"from":"your_client_id","text":"Hello..."}}
 ```
 
-### Upload a File
+> No shared secrets. No password DB. Server never sees private keys.
 
-Send POST request to `http://localhost:8080/upload` for example with `curl`:
+---
+
+### 📤 Upload a File (authorized only after auth)
+
 ```bash
-curl -X POST --data-binary @yourfile.mp4 http://localhost:8080/upload
+curl -X POST --data-binary @test.jpg http://localhost:8080/upload
+# → {"url":"/media/abcd1234.bin"}
+
+curl http://localhost:8080/media/abcd1234.bin
+# → downloads as attachment (XSS-safe)
 ```
-
-Response:
-
-```json
-{"url":"/media/abcd1234.bin"}
-```
-
-Access it at: `http://localhost:8080/media/abcd1234.bin`
 
 ---
 
@@ -94,16 +109,16 @@ Access it at: `http://localhost:8080/media/abcd1234.bin`
 
 ```
 src/
-├── main.rs              # Entry point
-├── messages.rs          # Message types (ClientMessage, AppMessage)
-├── state.rs             # Shared in-memory state (online users)
-├── ws.rs                # Just forwarding ws submodules
-├── http.rs              # Just forwarding http submodules
-├── ws/                  # WebSocket session logic
-│   ├── session.rs       # Per-connection state & message handling
-│   └── handler.rs       # WebSocket upgrade handler
-└── http/                # HTTP handlers (upload, fallback)
-    ├── upload.rs
+├── main.rs
+├── messages.rs          # ClientMessage (auth/verify/text/file), AppMessage
+├── state.rs             # SharedState = DashMap<ClientId, Sender>
+├── ws/
+│   ├── handler.rs       # WebSocket upgrade
+│   ├── session.rs       # Auth state, challenge, multi-device ready
+│   └── auth.rs          # Ed25519 challenge/response logic ✅ NEW
+└── http/
+    ├── upload.rs        # Size-limited, safe
+    ├── media.rs         # Traversal-protected, attachment-only ✅ NEW
     └── fallback.rs
 ```
 
@@ -111,46 +126,77 @@ src/
 
 ## 🗺️ Roadmap
 
-| Feature                    | Status       |
-|----------------------------|--------------|
-| Text messaging             | ✅ Done      |
-| File uploads               | ✅ Done      |
-| Audio/video "circle" msgs  | ⏳ Planned   |
-| End-to-end encryption      | ⏳ Planned   |
-| WebRTC voice/video calls   | ⏳ Planned   |
-| Message history (SQLite)   | ⏳ Planned   |
-| Offline message queue      | ⏳ Planned   |
-| Group chats                | ⏳ Planned   |
+| Feature                    | Status       | Notes |
+|----------------------------|--------------|-------|
+| Ed25519 auth               | ✅ Done      | Challenge-response, client IDs = pubkey |
+| Text messaging             | ✅ Done      | Online only |
+| Secure file serving        | ✅ Done      | `attachment`, no traversal |
+| Upload size limit (30 MiB) | ✅ Done      | Via `RequestBodyLimitLayer` |
+| Multi-device support       | ⏳ Planned   | One client ID → many sessions |
+| Group chats                | ⏳ Planned   | Room-based, client-coordinated |
+| Offline message queue      | ⏳ Planned   | With sled/SQLite |
+| **E2E encryption**         | ⏳ Planned   | X25519 + ChaCha20-Poly1305 (client-core) |
+| Voice/video circle msgs    | ⏳ Planned   | Client-side recording → upload → notify |
+| WebRTC signalling          | ⏳ Planned   | SDP over existing WS channel |
 
-> The protocol is **custom** (not XMPP or Matrix), allowing full control over features and performance.
+> Protocol is **custom**, minimal, and designed for **auditability + privacy**.
 
 ---
 
-## 🔒 Security Notes
+## 🔒 Security Model
 
-- All connections should be served over **TLS** in production (add `rustls` support).
-- Authentication currently treats the token as the user ID (for MVP).  
-  → Will be replaced with **JWT validation**.
-- File uploads are stored on disk with random UUIDs (no execution allowed).
-- Input validation and rate limiting will be added before production use.
+| Layer | Mechanism |
+|------|-----------|
+| **Auth** | Ed25519 challenge-response (no secrets transmitted) |
+| **IDs** | `client_id = hex(pubkey)` — immutable, non-spoofable |
+| **Files** | Random UUID names, `Content-Disposition: attachment`, no MIME sniffing |
+| **Network** | No TLS in dev — **must be fronted by HTTPS (e.g. Caddy/Nginx)** in prod |
+| **DoS** | Auth timeout, upload limit, traversal protection |
+| **E2E path** | Server only transports encrypted payloads — keys never leave clients |
+
+> ✅ This setup is suitable for threat models where **server compromise ≠ message compromise**.
 
 ---
 
 ## 🛠️ Built With
 
-- [**axum**](https://github.com/tokio-rs/axum) – Web framework
-- [**tokio-tungstenite**](https://github.com/snapview/tokio-tungstenite) – WebSocket support
-- [**serde**](https://serde.rs) – Serialization
+- [**axum**](https://github.com/tokio-rs/axum) – Web server
+- [**ed25519-dalek**](https://github.com/dalek-cryptography/ed25519-dalek) – Cryptographic auth ✅
 - [**dashmap**](https://github.com/xacrimon/dashmap) – Concurrent in-memory state
+- [**serde**](https://serde.rs) – Message serialization
+- [**tower-http**](https://github.com/tower-rs/tower-http) – Request body limiting, fallback
 - [**tracing**](https://docs.rs/tracing) – Structured logging
 
 ---
 
 ## 📜 License
 
-MIT — see [LICENSE](LICENSE) for details.
+MIT — see [LICENSE](LICENSE)
 
 ---
 
-> 💡 **Contributions, suggestions, and security feedback are welcome!**  
-> This project is designed to be **minimal, auditable, and privacy-respecting** from the ground up.
+> 💡 **Contributions welcome!**  
+> Especially:  
+> - `client-core` (Rust, E2E logic)  
+> - Flutter UI prototype  
+> - Fuzzing / audit reports
+
+---
+
+### Appendix: Generate Test Keypair (CLI)
+
+To quickly test auth, use this one-liner with `openssl`:
+
+```bash
+# Generate Ed25519 key (OpenSSL 3.0+)
+openssl genpkey -algorithm Ed25519 -out priv.pem
+openssl pkey -in priv.pem -pubout -outform DER | tail -c 32 | xxd -p -c 32
+# → public key (64 hex chars)
+
+# Sign challenge (e.g. "a1b2c3..." as hex string → binary → sign)
+echo -n "a1b2c3d4..." | xxd -r -p | openssl pkeyutl -sign -inkey priv.pem -rawin -digest null | xxd -p -c 64
+# → signature (128 hex chars)
+```
+
+Or use [`client-cli`](https://github.com/zornfeuer/ironwire/tree/main/client-cli) (coming soon).
+```
