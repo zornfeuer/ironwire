@@ -199,4 +199,3 @@ echo -n "a1b2c3d4..." | xxd -r -p | openssl pkeyutl -sign -inkey priv.pem -rawin
 ```
 
 Or use [`client-cli`](https://github.com/zornfeuer/ironwire/tree/main/client-cli) (coming soon).
-```
