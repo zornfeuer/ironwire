@@ -24,7 +24,7 @@ pub struct Session {
     client_id: Option<UserId>,
     pending_verification: Option<AuthChallenge>,
     sender: MessageSender,
-    socket: WebSocket,
+    socket: WebSocFile
 }
 
 impl Session {
@@ -131,9 +131,9 @@ impl Session {
                     self.handle_verify(state, &attempt).await
                 }
                 _ => {
-                    let client_id = self.client_id.clone();
-                    self.send_error("expected_verify", client_id.unwrap().as_str()).await;
-                    HandleResult::Continue
+                    warn!("Expected verify message during auth challenge");
+                    self.send_close("expected_verify").await;
+                    HandleResult::Close
                 }
             };
         }
@@ -155,16 +155,22 @@ impl Session {
                 }
             }
             _ => {
-                let client_id = self.client_id.clone();
-                self.send_error("auth_required", client_id.unwrap().as_str()).await;
-                HandleResult::Continue
+                warn!("Expected auth message before authentication");
+                self.send_close("auth_required").await;
+                HandleResult::Close
             }
         }
     }
 
     async fn handle_verify(&mut self, state: &SharedState, sig_bytes: &[u8]) -> HandleResult {
-        let pending = self.pending_verification.take()
-            .expect("verify called without pending");
+        let pending = match self.pending_verification.take() {
+            Some(p) => p,
+            None => {
+                warn!("Verify called without pending challenge");
+                self.send_close("No pending authentication challenge").await;
+                return HandleResult::Close;
+            }
+        };
         
         match pending.verify(sig_bytes) {
             Ok(()) => {
@@ -188,8 +194,15 @@ impl Session {
     }
 
     async fn handle_text_message(&mut self, state: &SharedState, to: &str, text: &str ) -> HandleResult {
-        let from = self.client_id.as_ref().unwrap(); // is called only after authorization so user_id
-                                                              // shouldn't be None
+        let from = match self.client_id.as_ref() {
+            Some(id) => id,
+            None => {
+                warn!("Text message attempted without authentication");
+                self.send_close("Not authenticated").await;
+                return HandleResult::Close;
+            }
+        };
+
         if let Some(sender) = state.get(to) {
             let msg = serde_json::json!({
                 "type": "text",
@@ -218,7 +231,14 @@ impl Session {
     }
 
     async fn handle_file_message(&mut self, state: &SharedState, to: &str, url: &str) -> HandleResult {
-        let from = self.client_id.as_ref().unwrap();
+        let from = match self.client_id.as_ref() {
+            Some(id) => id,
+            None => {
+                warn!("File message attempted without authentication");
+                self.send_close("Not authenticated").await;
+                return HandleResult::Close;
+            }
+        };
 
         if let Some(sender) = state.get(to) {
             let msg = serde_json::json!({
