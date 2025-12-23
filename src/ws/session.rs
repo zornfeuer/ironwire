@@ -24,7 +24,7 @@ pub struct Session {
     client_id: Option<UserId>,
     pending_verification: Option<AuthChallenge>,
     sender: MessageSender,
-    socket: WebSocFile
+    socket: WebSocket
 }
 
 impl Session {
